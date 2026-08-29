@@ -1,0 +1,342 @@
+import { defineSoftwareMap } from "@dev.fast/progressive-review/software-map-model";
+
+export default defineSoftwareMap({
+  people: {
+    sreOperator: {
+      label: "SRE operator",
+      description: "Runs the CLI and interactive shell to investigate incidents.",
+    },
+    chatUser: {
+      label: "Chat user",
+      description: "Sends incident questions through Telegram, Slack, or Discord.",
+    },
+    gatewayOperator: {
+      label: "Gateway operator",
+      description: "Runs the gateway daemon and the web health surface.",
+    },
+  },
+  systems: {
+    opensre: {
+      label: "OpenSRE",
+      description:
+        "Investigation agent that boots a host profile, runs turns, and calls vendor APIs.",
+      containers: {
+        cli: {
+          label: "CLI process",
+          description: "Stateless opensre command runner.",
+          components: {
+            commands: {
+              label: "CLI commands",
+              description: "Parses commands and hands work to investigation and setup.",
+              coverage: {
+                files: ["surfaces/entrypoint.py"],
+                globs: ["surfaces/cli/**"],
+              },
+            },
+          },
+        },
+        interactiveShell: {
+          label: "Interactive shell",
+          description: "Stateful REPL for incident response.",
+          components: {
+            repl: {
+              label: "REPL",
+              description: "Runs slash commands and turns through the shared turn host.",
+              coverage: { globs: ["surfaces/interactive_shell/**"] },
+            },
+          },
+        },
+        gatewayDaemon: {
+          label: "Gateway daemon",
+          description: "Inbound chat gateway for Telegram, Slack, Discord, and Buzz.",
+          components: {
+            transports: {
+              label: "Chat transports",
+              description: "Receives chat messages and delivers replies.",
+              coverage: { globs: ["gateway/transports/**"] },
+            },
+            session: {
+              label: "Session storage",
+              description: "Resolves conversation state for each inbound turn.",
+              coverage: { globs: ["gateway/core/**"] },
+            },
+          },
+        },
+        web: {
+          label: "Web app",
+          description: "FastAPI health, alert intake, and async investigations.",
+          components: {
+            app: {
+              label: "FastAPI app",
+              description: "Serves health, alert intake, and investigation APIs.",
+              coverage: { globs: ["gateway/web/**"] },
+            },
+          },
+        },
+        schedulerWorker: {
+          label: "Scheduler worker",
+          description: "Dedicated process for scheduled investigations and digests.",
+          components: {
+            scheduler: {
+              label: "Scheduler",
+              description: "Claims due work and runs scheduled investigations.",
+              coverage: { globs: ["infrastructure/scheduling/**"] },
+            },
+          },
+        },
+        runtime: {
+          label: "Shared runtime",
+          description:
+            "In-process libraries loaded by every host: boot, turns, agent, tools, credentials, and LLM.",
+          components: {
+            bootstrap: {
+              label: "Process bootstrap",
+              description:
+                "Composition root: ordered boot steps and harness adapter wiring.",
+              coverage: { globs: ["bootstrap/**"] },
+            },
+            turnRunner: {
+              label: "TurnRunner",
+              description: "Shared turn host for the REPL and every gateway transport.",
+              coverage: { globs: ["infrastructure/turn_host/**"] },
+            },
+            agent: {
+              label: "Agent loop",
+              description: "Think, call tools, observe loop, harness session, and state.",
+              coverage: {
+                globs: ["core/agent/**", "core/agent_harness/**", "core/state/**"],
+              },
+            },
+            investigation: {
+              label: "Investigation pipeline",
+              description: "Six-stage investigation capability over the agent loop.",
+              coverage: { globs: ["tools/investigation/**"] },
+            },
+            toolRegistry: {
+              label: "Tool registry",
+              description: "Discovers and executes agent-callable tools.",
+              coverage: {
+                files: [
+                  "tools/registry.py",
+                  "tools/registry_discovery.py",
+                  "tools/registry_index.py",
+                ],
+                globs: ["core/tool/**"],
+              },
+            },
+            credentials: {
+              label: "Credential store",
+              description: "Resolves vendor credentials for integration clients.",
+              coverage: {
+                files: ["integrations/store.py", "integrations/catalog.py"],
+                globs: ["integrations/credentials_api/**"],
+              },
+            },
+            llm: {
+              label: "LLM clients",
+              description: "Provider-agnostic LLM clients used by the agent loop.",
+              coverage: { globs: ["core/llm/**"] },
+            },
+          },
+        },
+      },
+    },
+    vendorApis: {
+      label: "Vendor APIs",
+      description: "Datadog, Grafana, GitHub, and other observability and ticketing APIs.",
+      external: true,
+    },
+    llmProviders: {
+      label: "LLM providers",
+      description: "Hosted and local model APIs used by OpenSRE.",
+      external: true,
+    },
+    chatPlatforms: {
+      label: "Chat platforms",
+      description: "Telegram, Slack, Discord, and Buzz.",
+      external: true,
+    },
+  },
+  relationships: [
+    {
+      kind: "semantic",
+      from: "sreOperator",
+      to: "opensre.cli.commands",
+      label: "Runs CLI commands",
+    },
+    {
+      kind: "semantic",
+      from: "sreOperator",
+      to: "opensre.interactiveShell.repl",
+      label: "Runs the REPL",
+    },
+    {
+      kind: "semantic",
+      from: "chatUser",
+      to: "chatPlatforms",
+      label: "Sends chat messages",
+    },
+    {
+      kind: "semantic",
+      from: "gatewayOperator",
+      to: "opensre.gatewayDaemon",
+      label: "Operates the gateway",
+    },
+    {
+      kind: "semantic",
+      from: "gatewayOperator",
+      to: "opensre.web.app",
+      label: "Checks health and intake",
+    },
+    {
+      kind: "semantic",
+      from: "chatPlatforms",
+      to: "opensre.gatewayDaemon.transports",
+      label: "Delivers inbound messages",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.gatewayDaemon.transports",
+      to: "chatPlatforms",
+      label: "Sends replies",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.cli",
+      to: "opensre.runtime.bootstrap",
+      label: "Boots CLI profile",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.interactiveShell",
+      to: "opensre.runtime.bootstrap",
+      label: "Boots embedded profile",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.gatewayDaemon",
+      to: "opensre.runtime.bootstrap",
+      label: "Boots gateway profile",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.web",
+      to: "opensre.runtime.bootstrap",
+      label: "Boots web profile",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.schedulerWorker",
+      to: "opensre.runtime.bootstrap",
+      label: "Boots scheduler profile",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.bootstrap",
+      to: "opensre.runtime.toolRegistry",
+      label: "Registers harness adapters",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.bootstrap",
+      to: "opensre.runtime.credentials",
+      label: "Wires the credential store",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.bootstrap",
+      to: "opensre.runtime.llm",
+      label: "Preloads LLM clients",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.cli.commands",
+      to: "opensre.runtime.investigation",
+      label: "Starts an investigation",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.interactiveShell.repl",
+      to: "opensre.runtime.turnRunner",
+      label: "Runs a REPL turn",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.gatewayDaemon.transports",
+      to: "opensre.gatewayDaemon.session",
+      label: "Resolves conversation state",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.gatewayDaemon.transports",
+      to: "opensre.runtime.turnRunner",
+      label: "Runs a chat turn",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.web.app",
+      to: "opensre.runtime.investigation",
+      label: "Starts an async investigation",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.schedulerWorker.scheduler",
+      to: "opensre.runtime.investigation",
+      label: "Runs scheduled investigations",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.turnRunner",
+      to: "opensre.runtime.agent",
+      label: "Runs the agent loop",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.investigation",
+      to: "opensre.runtime.agent",
+      label: "Runs the ReAct loop",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.investigation",
+      to: "opensre.runtime.credentials",
+      label: "Resolves vendor credentials",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.agent",
+      to: "opensre.runtime.toolRegistry",
+      label: "Selects and executes tools",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.agent",
+      to: "opensre.runtime.llm",
+      label: "Invokes the model",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.toolRegistry",
+      to: "opensre.runtime.credentials",
+      label: "Uses vendor clients",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.investigation",
+      to: "vendorApis",
+      label: "Queries vendor APIs",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.credentials",
+      to: "vendorApis",
+      label: "Authenticates to vendors",
+    },
+    {
+      kind: "semantic",
+      from: "opensre.runtime.llm",
+      to: "llmProviders",
+      label: "Invokes models",
+    },
+  ],
+});
